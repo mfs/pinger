@@ -1,0 +1,87 @@
+#!/usr/bin/env python
+
+# Copyright 2014 Mike Sampson
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+import sys
+import yaml
+import gping
+import requests
+import argparse
+
+
+def parse_config():
+     return yaml.load(open(args.config).read())
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('config', help='config file')
+
+    return parser.parse_args()
+
+
+def pushover_alert(msg):
+    payload = {
+	"user": pushover_user,
+	"token": pushover_token,
+	'priority': 2,
+	'retry': 300,
+	'expire': 3600,
+	'message': msg
+    }
+
+    r = requests.post('https://api.pushover.net/1/messages.json', data = payload)
+
+    if r.status_code != requests.codes.ok:
+	raise r.raise_for_status()
+
+
+def lookup_node(address):
+    for node in nodes:
+	if node['ip'] == address:
+	    return node
+    return None
+
+
+def ping_callback(ping):
+    if not ping['success']:
+	node = lookup_node(ping['dest_addr'])
+	msg = '%s (%s) is down' % (node['name'], node['ip'])
+	print(msg)
+	pushover_alert(msg)
+
+
+def main():
+
+    gp = gping.GPing()
+
+    for node in nodes:
+	gp.send(node['ip'], ping_callback)
+
+    gp.join()
+
+
+args = parse_args()
+
+config = parse_config()
+
+nodes = config['nodes']
+pushover_user = config['pushover']['user']
+pushover_token = config['pushover']['token']
+
+
+if __name__ == '__main__':
+    main()
