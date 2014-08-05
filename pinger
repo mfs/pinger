@@ -17,10 +17,13 @@
 
 import sys
 import yaml
+import time
 import gping
 import requests
 import argparse
+import collections
 
+counter = collections.Counter()
 
 def parse_config():
      return yaml.load(open(args.config).read())
@@ -57,21 +60,26 @@ def lookup_node(address):
 
 
 def ping_callback(ping):
-    if not ping['success']:
-	node = lookup_node(ping['dest_addr'])
-	msg = '%s (%s) is down' % (node['name'], node['ip'])
-	print(msg)
-	pushover_alert(msg)
+    if ping['success']:
+        counter[ping['dest_addr']] += 1
 
 
 def main():
 
     gp = gping.GPing()
 
-    for node in nodes:
-	gp.send(node['ip'], ping_callback)
+    for x in range(3):
+        time.sleep(1)
+        for node in nodes:
+            gp.send(node['ip'], ping_callback)
 
     gp.join()
+
+    for node in nodes:
+        if counter[node['ip']] == 0:
+            msg =  '%s (%s) is down' % (node['name'], node['ip'])
+            print(msg)
+            pushover_alert(msg)
 
 
 args = parse_args()
