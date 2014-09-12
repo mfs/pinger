@@ -36,15 +36,17 @@ def parse_args():
     return parser.parse_args()
 
 
-def pushover_alert(msg):
+def pushover_alert(msg, priority = 0):
     payload = {
 	"user": pushover_user,
 	"token": pushover_token,
-	'priority': 2,
-	'retry': 300,
-	'expire': 3600,
+	'priority': priority,
 	'message': msg
     }
+
+    if priority == 2:
+        payload['retry'] = 300
+        payload['expire'] = 3600
 
     r = requests.post('https://api.pushover.net/1/messages.json', data = payload)
 
@@ -79,7 +81,7 @@ def main():
         if counter[node['ip']] == 0:
             msg =  '%s (%s) is down' % (node['name'], node['ip'])
             print(msg)
-            pushover_alert(msg)
+            pushover_alert(msg, priority = 2)
 
 
 args = parse_args()
