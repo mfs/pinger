@@ -67,6 +67,7 @@ def ping_callback(ping):
 
 
 def loop(gp):
+    counter.clear()
     for x in range(3):
         time.sleep(1)
         for node in nodes:
@@ -75,10 +76,17 @@ def loop(gp):
     gp.join()
 
     for node in nodes:
-        if counter[node['ip']] == 0:
+        if counter[node['ip']] == 0 and node['up']:
+            node['up'] = False
             msg =  '%s (%s) is down' % (node['name'], node['ip'])
             print(msg)
             pushover_alert(msg, priority = 2)
+        elif counter[node['ip']] > 0 and not node['up']:
+            node['up'] = True
+            msg =  '%s (%s) is up' % (node['name'], node['ip'])
+            print(msg)
+            pushover_alert(msg)
+
 
     time.sleep(60)
 
@@ -98,6 +106,8 @@ nodes = config['nodes']
 pushover_user = config['pushover']['user']
 pushover_token = config['pushover']['token']
 
+for n in nodes:
+    n['up'] = True
 
 if __name__ == '__main__':
     main()
