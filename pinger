@@ -66,10 +66,7 @@ def ping_callback(ping):
         counter[ping['dest_addr']] += 1
 
 
-def main():
-
-    gp = gping.GPing()
-
+def loop(gp):
     for x in range(3):
         time.sleep(1)
         for node in nodes:
@@ -83,6 +80,15 @@ def main():
             print(msg)
             pushover_alert(msg, priority = 2)
 
+    time.sleep(60)
+
+
+def main():
+
+    gp = gping.GPing()
+
+    while True:
+        loop(gp)
 
 args = parse_args()
 
