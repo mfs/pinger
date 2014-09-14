@@ -54,6 +54,22 @@ def pushover_alert(msg, priority = 0):
 	raise r.raise_for_status()
 
 
+def hipchat_alert(msg, color):
+    payload = {
+        'format': 'json',
+        'auth_token': hipchat_token,
+        'room_id': hipchat_room,
+        'from': hipchat_from,
+        'message': msg,
+        'color': color
+    }
+
+    r = requests.post('https://api.hipchat.com/v1/rooms/message', data = payload)
+
+    if r.status_code != requests.codes.ok:
+	raise r.raise_for_status()
+
+
 def lookup_node(address):
     for node in nodes:
 	if node['ip'] == address:
@@ -81,11 +97,13 @@ def loop(gp):
             msg =  '%s (%s) is down' % (node['name'], node['ip'])
             print(msg)
             pushover_alert(msg, priority = 2)
+            hipchat_alert(msg, color = 'red')
         elif counter[node['ip']] > 0 and not node['up']:
             node['up'] = True
             msg =  '%s (%s) is up' % (node['name'], node['ip'])
             print(msg)
             pushover_alert(msg)
+            hipchat_alert(msg, color = 'green')
 
 
     time.sleep(60)
@@ -105,6 +123,10 @@ config = parse_config()
 nodes = config['nodes']
 pushover_user = config['pushover']['user']
 pushover_token = config['pushover']['token']
+
+hipchat_token = config['hipchat']['token']
+hipchat_room = config['hipchat']['room']
+hipchat_from = config['hipchat']['from']
 
 for n in nodes:
     n['up'] = True
