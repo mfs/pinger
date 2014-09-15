@@ -26,7 +26,18 @@ import collections
 counter = collections.Counter()
 
 def parse_config():
-     return yaml.load(open(args.config).read())
+    config = yaml.load(open(args.config).read())
+
+    nodes = config['nodes']
+
+    for node in nodes:
+        node['up'] = True
+
+    pushover = config['pushover']
+
+    hipchat = config['hipchat']
+
+    return (nodes, pushover, hipchat)
 
 
 def parse_args():
@@ -38,8 +49,8 @@ def parse_args():
 
 def pushover_alert(msg, priority = 0):
     payload = {
-	"user": pushover_user,
-	"token": pushover_token,
+	"user": pushover['user'],
+	"token": pushover['token'],
 	'priority': priority,
 	'message': msg
     }
@@ -57,9 +68,9 @@ def pushover_alert(msg, priority = 0):
 def hipchat_alert(msg, color):
     payload = {
         'format': 'json',
-        'auth_token': hipchat_token,
-        'room_id': hipchat_room,
-        'from': hipchat_from,
+        'auth_token': hipchat['token'],
+        'room_id': hipchat['room'],
+        'from': hipchat['from'],
         'message': msg,
         'color': color
     }
@@ -118,18 +129,8 @@ def main():
 
 args = parse_args()
 
-config = parse_config()
+nodes, pushover, hipchat = parse_config()
 
-nodes = config['nodes']
-pushover_user = config['pushover']['user']
-pushover_token = config['pushover']['token']
-
-hipchat_token = config['hipchat']['token']
-hipchat_room = config['hipchat']['room']
-hipchat_from = config['hipchat']['from']
-
-for n in nodes:
-    n['up'] = True
 
 if __name__ == '__main__':
     main()
