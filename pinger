@@ -126,6 +126,7 @@ def main():
 
     while True:
         loop(gp)
+        print('-- ping --')
 
 args = parse_args()
 
