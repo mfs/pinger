@@ -23,10 +23,10 @@ import requests
 import argparse
 import collections
 
-counter = collections.Counter()
 
-def parse_config():
-    config = yaml.load(open(args.config).read())
+
+def parse_config(config_file):
+    config = yaml.load(open(config_file).read())
 
     nodes = config['nodes']
 
@@ -47,90 +47,102 @@ def parse_args():
     return parser.parse_args()
 
 
-def pushover_alert(msg, priority = 0):
-    payload = {
-	"user": pushover['user'],
-	"token": pushover['token'],
-	'priority': priority,
-	'message': msg
-    }
+class Pinger:
 
-    if priority == 2:
-        payload['retry'] = 300
-        payload['expire'] = 3600
+    def __init__(self):
+        self.counter = collections.Counter()
+        self.gp = gping.GPing()
 
-    r = requests.post('https://api.pushover.net/1/messages.json', data = payload)
+        self.args = parse_args()
 
-    if r.status_code != requests.codes.ok:
-	raise r.raise_for_status()
+        nodes, pushover, hipchat = parse_config(self.args.config)
+
+        self.nodes = nodes
+        self.pushover = pushover
+        self.hipchat = hipchat
 
 
-def hipchat_alert(msg, color):
-    payload = {
-        'format': 'json',
-        'auth_token': hipchat['token'],
-        'room_id': hipchat['room'],
-        'from': hipchat['from'],
-        'message': msg,
-        'color': color
-    }
+    def pushover_alert(self, msg, priority = 0):
+        payload = {
+            "user": self.pushover['user'],
+            "token": self.pushover['token'],
+            'priority': priority,
+            'message': msg
+        }
 
-    r = requests.post('https://api.hipchat.com/v1/rooms/message', data = payload)
+        if priority == 2:
+            payload['retry'] = 300
+            payload['expire'] = 3600
 
-    if r.status_code != requests.codes.ok:
-	raise r.raise_for_status()
+        r = requests.post('https://api.pushover.net/1/messages.json', data = payload)
 
-
-def lookup_node(address):
-    for node in nodes:
-	if node['ip'] == address:
-	    return node
-    return None
+        if r.status_code != requests.codes.ok:
+            raise r.raise_for_status()
 
 
-def ping_callback(ping):
-    if ping['success']:
-        counter[ping['dest_addr']] += 1
+    def hipchat_alert(self, msg, color):
+        payload = {
+            'format': 'json',
+            'auth_token': self.hipchat['token'],
+            'room_id': self.hipchat['room'],
+            'from': self.hipchat['from'],
+            'message': msg,
+            'color': color
+        }
+
+        r = requests.post('https://api.hipchat.com/v1/rooms/message', data = payload)
+
+        if r.status_code != requests.codes.ok:
+            raise r.raise_for_status()
 
 
-def loop(gp):
-    counter.clear()
-    for x in range(3):
-        time.sleep(1)
-        for node in nodes:
-            gp.send(node['ip'], ping_callback)
-
-    gp.join()
-
-    for node in nodes:
-        if counter[node['ip']] == 0 and node['up']:
-            node['up'] = False
-            msg =  '%s (%s) is down' % (node['name'], node['ip'])
-            print(msg)
-            pushover_alert(msg, priority = 2)
-            hipchat_alert(msg, color = 'red')
-        elif counter[node['ip']] > 0 and not node['up']:
-            node['up'] = True
-            msg =  '%s (%s) is up' % (node['name'], node['ip'])
-            print(msg)
-            pushover_alert(msg)
-            hipchat_alert(msg, color = 'green')
+    def lookup_node(self, address):
+        for node in self.nodes:
+            if node['ip'] == address:
+                return node
+        return None
 
 
-    time.sleep(60)
+    def ping_callback(self, ping):
+        if ping['success']:
+            self.counter[ping['dest_addr']] += 1
+
+
+    def loop(self):
+        self.counter.clear()
+        for x in range(3):
+            time.sleep(1)
+            for node in self.nodes:
+                self.gp.send(node['ip'], self.ping_callback)
+
+        self.gp.join()
+
+        for node in self.nodes:
+            if self.counter[node['ip']] == 0 and node['up']:
+                node['up'] = False
+                msg =  '%s (%s) is down' % (node['name'], node['ip'])
+                print(msg)
+                self.pushover_alert(msg, priority = 2)
+                self.hipchat_alert(msg, color = 'red')
+            elif self.counter[node['ip']] > 0 and not node['up']:
+                node['up'] = True
+                msg =  '%s (%s) is up' % (node['name'], node['ip'])
+                print(msg)
+                self.pushover_alert(msg)
+                self.hipchat_alert(msg, color = 'green')
+
+
+        time.sleep(60)
 
 
 def main():
 
-    gp = gping.GPing()
+    pinger = Pinger()
 
     while True:
-        loop(gp)
+        pinger.loop()
         print('-- ping --')
 
-args = parse_args()
-
-nodes, pushover, hipchat = parse_config()
 
 
 if __name__ == '__main__':
