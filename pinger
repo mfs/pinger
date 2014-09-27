@@ -19,10 +19,11 @@ import sys
 import yaml
 import time
 import gping
+import bottle
 import requests
 import argparse
 import collections
-
+import multiprocessing
 
 
 def parse_config(config_file):
@@ -58,6 +59,7 @@ class Pinger:
         nodes, pushover, hipchat = parse_config(self.args.config)
 
         self.nodes = nodes
+        self.nodes_down = multiprocessing.Manager().list()
         self.pushover = pushover
         self.hipchat = hipchat
 
@@ -103,6 +105,13 @@ class Pinger:
         return None
 
 
+    def lookup_node_by_name(self, name):
+        for node in self.nodes:
+            if node['name'] == name:
+                return node
+        return None
+
+
     def ping_callback(self, ping):
         if ping['success']:
             self.counter[ping['dest_addr']] += 1
@@ -118,6 +127,9 @@ class Pinger:
         self.gp.join()
 
         for node in self.nodes:
+            if node['name'] in self.nodes_down:
+                print('{} is configured to be down.'.format(node['name']))
+                continue
             if self.counter[node['ip']] == 0 and node['up']:
                 node['up'] = False
                 msg =  '%s (%s) is down' % (node['name'], node['ip'])
@@ -132,17 +144,49 @@ class Pinger:
                 self.hipchat_alert(msg, color = 'green')
 
 
-        time.sleep(60)
+    def run(self):
+        p = multiprocessing.Process(target = self.api_serve)
+        p.start()
+
+        while True:
+            self.loop()
+            print('-- ping --')
+            time.sleep(60)
+
+
+    def api_serve(self):
+        bottle.route('/up/<host>', callback = self.api_up)
+        bottle.route('/down/<host>', callback = self.api_down)
+        bottle.run(host = 'localhost', port = 8080)
+
+
+    def api_up(self, host):
+        node = self.lookup_node_by_name(host)
+
+        if node:
+            print('up', host)
+            if node['name'] in self.nodes_down:
+                self.nodes_down.remove(node['name'])
+        else:
+            bottle.abort(404, 'Invalid host.')
+
+
+    def api_down(self, host):
+        node = self.lookup_node_by_name(host)
+
+        if node:
+            print('down', host)
+            if node['name'] not in self.nodes_down:
+                self.nodes_down.append(node['name'])
+        else:
+            bottle.abort(404, 'Invalid host.')
 
 
 def main():
 
     pinger = Pinger()
 
-    while True:
-        pinger.loop()
-        print('-- ping --')
-
+    pinger.run()
 
 
 if __name__ == '__main__':

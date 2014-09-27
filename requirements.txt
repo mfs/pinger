@@ -1,4 +1,5 @@
 PyYAML==3.11
+bottle==0.12.7
 gevent==1.0.1
 gping==0.1
 greenlet==0.4.2
