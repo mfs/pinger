@@ -159,7 +159,7 @@ class Pinger:
     def api_serve(self):
         bottle.route('/up/<host>', callback = self.api_up)
         bottle.route('/down/<host>', callback = self.api_down)
-        bottle.run(host = 'localhost', port = 8080)
+        bottle.run(host = 'localhost', port = 8081)
 
 
     def api_up(self, host):
