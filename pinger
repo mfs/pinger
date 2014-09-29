@@ -20,6 +20,7 @@ import yaml
 import time
 import gping
 import bottle
+import signal
 import requests
 import argparse
 import collections
@@ -145,8 +146,9 @@ class Pinger:
 
 
     def run(self):
-        p = multiprocessing.Process(target = self.api_serve)
-        p.start()
+        self.p = multiprocessing.Process(target = self.api_serve)
+        self.p.start()
+        signal.signal(signal.SIGTERM, self.shutdown)
 
         while True:
             self.loop()
@@ -181,6 +183,10 @@ class Pinger:
         else:
             bottle.abort(404, 'Invalid host.')
 
+
+    def shutdown(self, signum, frame):
+        self.p.terminate()
+        sys.exit(0)
 
 def main():
 
