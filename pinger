@@ -19,16 +19,14 @@ import sys
 import yaml
 import time
 import gping
-import bottle
-import signal
 import requests
 import argparse
 import collections
-import multiprocessing
 
+counter = collections.Counter()
 
-def parse_config(config_file):
-    config = yaml.load(open(config_file).read())
+def parse_config():
+    config = yaml.load(open(args.config).read())
 
     nodes = config['nodes']
 
@@ -49,150 +47,90 @@ def parse_args():
     return parser.parse_args()
 
 
-class Pinger:
+def pushover_alert(msg, priority = 0):
+    payload = {
+	"user": pushover['user'],
+	"token": pushover['token'],
+	'priority': priority,
+	'message': msg
+    }
 
-    def __init__(self):
-        self.counter = collections.Counter()
-        self.gp = gping.GPing()
+    if priority == 2:
+        payload['retry'] = 300
+        payload['expire'] = 3600
 
-        self.args = parse_args()
+    r = requests.post('https://api.pushover.net/1/messages.json', data = payload)
 
-        nodes, pushover, hipchat = parse_config(self.args.config)
-
-        self.nodes = nodes
-        self.nodes_down = multiprocessing.Manager().list()
-        self.pushover = pushover
-        self.hipchat = hipchat
-
-
-    def pushover_alert(self, msg, priority = 0):
-        payload = {
-            "user": self.pushover['user'],
-            "token": self.pushover['token'],
-            'priority': priority,
-            'message': msg
-        }
-
-        if priority == 2:
-            payload['retry'] = 300
-            payload['expire'] = 3600
-
-        r = requests.post('https://api.pushover.net/1/messages.json', data = payload)
-
-        if r.status_code != requests.codes.ok:
-            raise r.raise_for_status()
+    if r.status_code != requests.codes.ok:
+	raise r.raise_for_status()
 
 
-    def hipchat_alert(self, msg, color):
-        payload = {
-            'format': 'json',
-            'auth_token': self.hipchat['token'],
-            'room_id': self.hipchat['room'],
-            'from': self.hipchat['from'],
-            'message': msg,
-            'color': color
-        }
+def hipchat_alert(msg, color):
+    payload = {
+        'format': 'json',
+        'auth_token': hipchat['token'],
+        'room_id': hipchat['room'],
+        'from': hipchat['from'],
+        'message': msg,
+        'color': color
+    }
 
-        r = requests.post('https://api.hipchat.com/v1/rooms/message', data = payload)
+    r = requests.post('https://api.hipchat.com/v1/rooms/message', data = payload)
 
-        if r.status_code != requests.codes.ok:
-            raise r.raise_for_status()
-
-
-    def lookup_node(self, address):
-        for node in self.nodes:
-            if node['ip'] == address:
-                return node
-        return None
+    if r.status_code != requests.codes.ok:
+	raise r.raise_for_status()
 
 
-    def lookup_node_by_name(self, name):
-        for node in self.nodes:
-            if node['name'] == name:
-                return node
-        return None
+def lookup_node(address):
+    for node in nodes:
+	if node['ip'] == address:
+	    return node
+    return None
 
 
-    def ping_callback(self, ping):
-        if ping['success']:
-            self.counter[ping['dest_addr']] += 1
+def ping_callback(ping):
+    if ping['success']:
+        counter[ping['dest_addr']] += 1
 
 
-    def loop(self):
-        self.counter.clear()
-        for x in range(3):
-            time.sleep(1)
-            for node in self.nodes:
-                self.gp.send(node['ip'], self.ping_callback)
+def loop(gp):
+    counter.clear()
+    for x in range(3):
+        time.sleep(1)
+        for node in nodes:
+            gp.send(node['ip'], ping_callback)
 
-        self.gp.join()
+    gp.join()
 
-        for node in self.nodes:
-            if node['name'] in self.nodes_down:
-                print('{} is configured to be down.'.format(node['name']))
-                continue
-            if self.counter[node['ip']] == 0 and node['up']:
-                node['up'] = False
-                msg =  '%s (%s) is down' % (node['name'], node['ip'])
-                print(msg)
-                self.pushover_alert(msg, priority = 2)
-                self.hipchat_alert(msg, color = 'red')
-            elif self.counter[node['ip']] > 0 and not node['up']:
-                node['up'] = True
-                msg =  '%s (%s) is up' % (node['name'], node['ip'])
-                print(msg)
-                self.pushover_alert(msg)
-                self.hipchat_alert(msg, color = 'green')
+    for node in nodes:
+        if counter[node['ip']] == 0 and node['up']:
+            node['up'] = False
+            msg =  '%s (%s) is down' % (node['name'], node['ip'])
+            print(msg)
+            pushover_alert(msg, priority = 2)
+            hipchat_alert(msg, color = 'red')
+        elif counter[node['ip']] > 0 and not node['up']:
+            node['up'] = True
+            msg =  '%s (%s) is up' % (node['name'], node['ip'])
+            print(msg)
+            pushover_alert(msg)
+            hipchat_alert(msg, color = 'green')
 
 
-    def run(self):
-        self.p = multiprocessing.Process(target = self.api_serve)
-        self.p.start()
-        signal.signal(signal.SIGTERM, self.shutdown)
+    time.sleep(60)
 
-        while True:
-            self.loop()
-            print('-- ping --')
-            time.sleep(60)
-
-
-    def api_serve(self):
-        bottle.route('/up/<host>', callback = self.api_up)
-        bottle.route('/down/<host>', callback = self.api_down)
-        bottle.run(host = 'localhost', port = 8081)
-
-
-    def api_up(self, host):
-        node = self.lookup_node_by_name(host)
-
-        if node:
-            print('up', host)
-            if node['name'] in self.nodes_down:
-                self.nodes_down.remove(node['name'])
-        else:
-            bottle.abort(404, 'Invalid host.')
-
-
-    def api_down(self, host):
-        node = self.lookup_node_by_name(host)
-
-        if node:
-            print('down', host)
-            if node['name'] not in self.nodes_down:
-                self.nodes_down.append(node['name'])
-        else:
-            bottle.abort(404, 'Invalid host.')
-
-
-    def shutdown(self, signum, frame):
-        self.p.terminate()
-        sys.exit(0)
 
 def main():
 
-    pinger = Pinger()
+    gp = gping.GPing()
 
-    pinger.run()
+    while True:
+        loop(gp)
+        print('-- ping --')
+
+args = parse_args()
+
+nodes, pushover, hipchat = parse_config()
 
 
 if __name__ == '__main__':
