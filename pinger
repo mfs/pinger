@@ -107,7 +107,7 @@ def loop(gp):
             node['up'] = False
             msg =  '%s (%s) is down' % (node['name'], node['ip'])
             print(msg)
-            pushover_alert(msg, priority = 2)
+            pushover_alert(msg, priority = 1)
             hipchat_alert(msg, color = 'red')
         elif counter[node['ip']] > 0 and not node['up']:
             node['up'] = True
