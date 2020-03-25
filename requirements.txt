@@ -1,6 +1,6 @@
-PyYAML==3.11
+PyYAML==4.2b1
 gevent==1.0.1
 gping==0.1
 greenlet==0.4.2
-requests==2.3.0
+requests==2.20.0
 wsgiref==0.1.2
